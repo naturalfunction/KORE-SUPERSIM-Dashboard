@@ -86,8 +86,6 @@ kore-supersim-dashboard/
 │       └── vendor/                 # Third-party libraries (Leaflet, etc.)
 ├── deployment/                     # Production deployment configs
 │   └── nginx.conf                  # Nginx reverse proxy template
-├── debugging.md                    # Troubleshooting guide
-└── deployment.md                   # Production deployment guide
 ```
 
 ## Dashboard Views
@@ -310,7 +308,7 @@ MIT License - see `LICENSE` file for details.
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/naturalfunction/kore-supersim-dashboard/issues)
-- **KORE SUPER SIM**: [KORE Developer Portal](https://developer.korewireless.com/)
+- **KORE SUPER SIM**: [KORE Developer Portal](https://docs.korewireless.com/en-us/supersim/)
 
 ---
 
