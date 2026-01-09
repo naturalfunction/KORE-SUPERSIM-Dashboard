@@ -1,0 +1,40 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Virtual Environment
+venv/
+env/
+.venv/
+
+# Environment Variables
+.env
+.env.local
+.env.*
+!.env.example
+
+# Database
+*.db
+*.sqlite
+supersim_events.db
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+
+# IDE specific
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/

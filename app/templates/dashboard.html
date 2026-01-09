@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ app_title }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
+    <script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/leaflet-heat/leaflet-heat.js') }}"></script>
+</head>
+
+<body>
+    <div class="container">
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <img src="{{ url_for('static', filename='KORE-LOGO-SUPERSIM.png') }}" alt="KORE Wireless" class="logo">
+            <h1 class="dashboard-title">Dashboard</h1>
+        </div>
+
+        <!-- Stats Header -->
+        <header class="header">
+            <div class="header-stats">
+                <div class="stat-card">
+                    <div class="stat-label">Total Events</div>
+                    <div class="stat-value" id="total-events">{{ db_stats.total_events }}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Unique SIMs</div>
+                    <div class="stat-value" id="unique-sims">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Data Usage</div>
+                    <div class="stat-value" id="total-data">-</div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <nav class="tabs">
+            <button class="tab active" onclick="showView('live')">Live Events</button>
+            <button class="tab" onclick="showView('analytics')">Analytics</button>
+            <button class="tab" onclick="showView('map')">Map</button>
+            <button class="tab" onclick="showView('search')">Search & Filter</button>
+        </nav>
+
+        <!-- Live Events View -->
+        <div id="live-view" class="view active">
+            <div class="view-header">
+                <h2>Recent Events (Last 100)</h2>
+                <button class="refresh-btn" onclick="location.reload()">Refresh Now</button>
+            </div>
+
+            <div class="split-layout">
+                <!-- Left Sidebar: Event List -->
+                <div class="event-list-sidebar">
+                    {% if events %}
+                    {% for event in events %}
+                    <div class="event-list-item {{ 'selected' if loop.first else '' }}"
+                        onclick="selectEvent('{{ event.id }}', this)">
+                        <!-- Line 1: Timestamp and Event -->
+                        <div class="list-item-row"
+                            style="font-weight: bold; color: var(--text-color); display: flex; justify-content: space-between; align-items: center;">
+                            <span>{{ event.event_time.strftime('%Y-%m-%d %H:%M:%S UTC') }}</span>
+                            <span
+                                class="event-type-badge {{ 'started' if 'started' in event.event_type else ('ended' if 'ended' in event.event_type else 'updated') }}"
+                                style="font-size: 0.7em; padding: 1px 6px;">
+                                {{ event.event_type.split('.')[-1] | upper }}
+                            </span>
+                        </div>
+
+                        <!-- Line 2: Name -->
+                        <div class="list-item-row" style="margin-top: 4px;">
+                            <span style="color: var(--kore-blue); font-weight: 500;">{{ event.sim_unique_name or
+                                'Unknown Device' }}</span>
+                        </div>
+
+                        <!-- Line 3: ICCID -->
+                        <div class="list-item-row" style="color: #666; font-size: 0.85em; margin-top: 2px;">
+                            <span><b>ICCID:</b> {{ event.sim_iccid or 'N/A' }}</span>
+                        </div>
+
+                        <!-- Line 4: IMEI -->
+                        <div class="list-item-row" style="color: #666; font-size: 0.85em; margin-top: 2px;">
+                            <span><b>IMEI:</b> {{ event.imei or 'N/A' }}</span>
+                        </div>
+
+                        <!-- Line 4: Carrier | Rat_type -->
+                        <div class="list-item-row" style="color: #666; font-size: 0.85em; margin-top: 2px;">
+                            <span><b>Carrier:</b> {{ event.network_name or 'Unknown' }}</span>
+                            <span class="separator">|</span>
+                            <span><b>RAT:</b> <span style="text-transform: uppercase;">{{ event.rat_type or 'N/A'
+                                    }}</span></span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% else %}
+                    <div style="padding: 20px; text-align: center; color: #999;">
+                        No events found
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- Right Pane: Event Details -->
+                <div class="event-detail-pane">
+                    {% if events %}
+                    {% for event in events %}
+                    <div id="detail-{{ event.id }}" class="detail-view-container {{ 'active' if loop.first else '' }}">
+                        <div class="event-header-large">
+                            <h3>Event Details</h3>
+                            <div class="detail-tabs">
+                                <button class="tab-btn active"
+                                    onclick="switchTab('{{ event.id }}', 'structured', this)">Structured</button>
+                                <button class="tab-btn"
+                                    onclick="switchTab('{{ event.id }}', 'json', this)">JSON</button>
+                                {% if event.latitude and event.longitude %}
+                                <button class="tab-btn"
+                                    style="color: var(--kore-orange); border-color: var(--kore-orange);"
+                                    onclick="showOnMap({{ event.latitude }}, {{ event.longitude }}, '{{ event.sim_iccid }}')">
+                                    Map ↗
+                                </button>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- Structured View -->
+                        <div id="view-structured-{{ event.id }}" class="detail-content-view active">
+                            <div class="event-header" style="background:none; border:none; padding: 15px 25px 0;">
+                                <span class="event-time"
+                                    style="color: var(--text-light); font-weight: normal; font-size: 0.9em;">
+                                    Timestamp: {{ event.event_time.strftime('%Y-%m-%d %H:%M:%S UTC') }}
+                                </span>
+                            </div>
+
+                            <div class="event-detail-grid">
+                                <!-- Identity Section -->
+                                <div class="detail-section">
+                                    <h4>Identity</h4>
+                                    <div class="detail-row">
+                                        <span class="detail-label">SIM ICCID:</span>
+                                        <span class="detail-value">{{ event.sim_iccid or 'N/A' }}</span>
+                                    </div>
+                                    <div class="detail-row">
+                                        <span class="detail-label">Device Name:</span>
+                                        <span class="detail-value">{{ event.sim_unique_name or 'N/A' }}</span>
+                                    </div>
+                                    <div class="detail-row">
+                                        <span class="detail-label">IMSI:</span>
+                                        <span class="detail-value">{{ event.imsi or 'N/A' }}</span>
+                                    </div>
+                                    <div class="detail-row">
+                                        <span class="detail-label">IMEI:</span>
+                                        <span class="detail-value">{{ event.imei or 'N/A' }}</span>
+                                    </div>
+                                </div>
+
+                                <!-- Network Section -->
+                                <div class="detail-section">
+                                    <h4>Network</h4>
+                                    <div class="detail-row">
+                                        <span class="detail-label">Operator:</span>
+                                        <span class="detail-value">{{ event.network_name or 'N/A' }} ({{
+                                            event.network_iso_country or 'N/A' }})</span>
+                                    </div>
+                                    <div class="detail-row">
+                                        <span class="detail-label">PLMN (MCC/MNC):</span>
+                                        <span class="detail-value">{{ event.network_mcc or '?' }}/{{ event.network_mnc
+                                            or '?' }}</span>
+                                    </div>
+                                    <div class="detail-row">
+                                        <span class="detail-label">RAT:</span>
+                                        <span class="detail-value">{{ event.rat_type or 'N/A' }}</span>
+                                    </div>
+                                    <div class="detail-row">
+                                        <span class="detail-label">APN:</span>
+                                        <span class="detail-value">{{ event.apn or 'N/A' }}</span>
+                                    </div>
+                                    <div class="detail-row">
+                                        <span class="detail-label">IP Address:</span>
+                                        <span class="detail-value">{{ event.ip_address or 'N/A' }}</span>
+                                    </div>
+                                </div>
+
+                                <!-- Location Section -->
+                                <div class="detail-section">
+                                    <h4>Location</h4>
+                                    <div class="detail-row">
+                                        <span class="detail-label">Coordinates:</span>
+                                        {% if event.latitude and event.longitude %}
+                                        <span class="detail-value">
+                                            <a href="https://www.google.com/maps?q={{ event.latitude }},{{ event.longitude }}"
+                                                target="_blank"
+                                                style="color: var(--kore-orange); text-decoration: none;">
+                                                {{ event.latitude }}, {{ event.longitude }} ↗
+                                            </a>
+                                        </span>
+                                        {% else %}
+                                        <span class="detail-value">N/A</span>
+                                        {% endif %}
+                                    </div>
+                                    <div class="detail-row">
+                                        <span class="detail-label">Cell Info:</span>
+                                        <span class="detail-value">LAC: {{ event.lac or 'N/A' }} / Cell: {{
+                                            event.cell_id or 'N/A' }}</span>
+                                    </div>
+                                </div>
+
+                                <!-- Session Section -->
+                                <div class="detail-section">
+                                    <h4>Data Session</h4>
+                                    <div class="detail-row">
+                                        <span class="detail-label">Total Usage:</span>
+                                        <span class="detail-value">{{ (event.data_total / 1024 / 1024) | round(2) if
+                                            event.data_total else 0 }} MB</span>
+                                    </div>
+                                    <div class="detail-row">
+                                        <span class="detail-label">Download:</span>
+                                        <span class="detail-value">
+                                            ↓{{ (event.data_download / 1024 / 1024) | round(2) if event.data_download
+                                            else 0 }} MB
+                                        </span>
+                                    </div>
+                                    <div class="detail-row">
+                                        <span class="detail-label">Upload:</span>
+                                        <span class="detail-value">
+                                            ↑{{ (event.data_upload / 1024 / 1024) | round(2) if event.data_upload else
+                                            0 }} MB
+                                        </span>
+                                    </div>
+                                    <div class="detail-row">
+                                        <span class="detail-label">Session ID:</span>
+                                        <span class="detail-value" style="font-size: 0.8em;">{{ event.sim_sid or 'N/A'
+                                            }}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="event-footer">
+                                <span class="event-id">Event ID: {{ event.event_sid }}</span>
+                            </div>
+                        </div>
+
+                        <!-- JSON View -->
+                        <div id="view-json-{{ event.id }}" class="detail-content-view">
+                            <div class="json-view-wrapper">
+                                <pre>{{ event.payload | tojson(indent=2) }}</pre>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% else %}
+                    <div class="no-data" style="border: none; box-shadow: none;">
+                        <h2>No events received yet</h2>
+                        <p>Waiting for KORE SUPER SIM event streams...</p>
+                        <p class="webhook-url">Webhook URL: <code>{{ request.url_root }}webhook</code></p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Analytics View -->
+        <div id="analytics-view" class="view">
+            <div class="view-header">
+                <h2>Analytics Dashboard</h2>
+            </div>
+
+            <div class="analytics-grid">
+                <div class="chart-container">
+                    <h3>Events by Type</h3>
+                    <canvas id="events-by-type-chart"></canvas>
+                </div>
+
+                <div class="chart-container">
+                    <h3>Top Networks</h3>
+                    <canvas id="top-networks-chart"></canvas>
+                </div>
+
+                <div class="chart-container">
+                    <h3>Geographic Distribution</h3>
+                    <canvas id="countries-chart"></canvas>
+                </div>
+
+                <div class="chart-container">
+                    <h3>Data Usage Overview</h3>
+                    <div class="data-usage-stats" id="data-usage-stats">
+                        <p>Loading...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Map View -->
+        <div id="map-view" class="view">
+            <div class="view-header">
+                <h2>Global Connectivity Map</h2>
+                <div class="header-actions">
+                    <button class="btn-primary" style="padding: 5px 15px; font-size: 0.9em;"
+                        onclick="resetMapView()">Show All</button>
+                </div>
+            </div>
+            <div
+                style="height: calc(100vh - 250px); border-radius: 8px; overflow: hidden; position: relative; border: 1px solid var(--border-color);">
+                <div id="map" style="width: 100%; height: 100%;"></div>
+            </div>
+        </div>
+
+        <!-- Search & Filter View -->
+        <div id="search-view" class="view">
+            <div class="view-header">
+                <h2>Search & Filter Events</h2>
+            </div>
+
+            <div class="search-form">
+                <div class="form-row">
+                    <div class="form-field">
+                        <label for="search-iccid">SIM ICCID</label>
+                        <input type="text" id="search-iccid" placeholder="Enter ICCID">
+                    </div>
+                    <div class="form-field">
+                        <label for="search-event-type">Event Type</label>
+                        <select id="search-event-type">
+                            <option value="">All Types</option>
+                            <option value="com.kore.iot.supersim.connection.data-session.started">Started</option>
+                            <option value="com.kore.iot.supersim.connection.data-session.updated">Updated</option>
+                            <option value="com.kore.iot.supersim.connection.data-session.ended">Ended</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-field">
+                        <label for="search-start-date">Start Date</label>
+                        <input type="datetime-local" id="search-start-date">
+                    </div>
+                    <div class="form-field">
+                        <label for="search-end-date">End Date</label>
+                        <input type="datetime-local" id="search-end-date">
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button class="btn-primary" onclick="searchEvents()">Search</button>
+                    <button class="btn-secondary" onclick="clearSearch()">Clear</button>
+                </div>
+            </div>
+
+            <div id="search-results" class="events-container">
+                <div class="no-data">
+                    <p>Enter search criteria and click "Search" to find events</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+    <script>
+        // Auto-refresh configuration
+        const AUTO_REFRESH_INTERVAL = {{ auto_refresh }} * 1000; // Convert to milliseconds
+
+        // Auto-refresh only on live view
+        let refreshTimer = null;
+        function startAutoRefresh() {
+            if (refreshTimer) clearTimeout(refreshTimer);
+            refreshTimer = setTimeout(function () {
+                if (document.getElementById('live-view').classList.contains('active')) {
+                    location.reload();
+                }
+            }, AUTO_REFRESH_INTERVAL);
+        }
+
+        // Start auto-refresh
+        startAutoRefresh();
+
+        // Load analytics on page load
+        window.addEventListener('DOMContentLoaded', function () {
+            loadAnalytics();
+        });
+
+        // Toggle JSON visibility
+        function toggleJson(id) {
+            const container = document.getElementById(id);
+            if (container) {
+                container.classList.toggle('visible');
+            }
+        }
+
+        // Master-Detail Selection Logic
+        function selectEvent(eventId, listItem) {
+            // Remove active class from all detail views
+            document.querySelectorAll('.detail-view-container').forEach(el => {
+                el.classList.remove('active');
+            });
+
+            // Hide all selected states in sidebar
+            document.querySelectorAll('.event-list-item').forEach(el => {
+                el.classList.remove('selected');
+            });
+
+            // Activate specific detail view and list item
+            const detailView = document.getElementById('detail-' + eventId);
+            if (detailView) {
+                detailView.classList.add('active');
+            }
+
+            if (listItem) {
+                listItem.classList.add('selected');
+            }
+        }
+    </script>
+</body>
+
+</html>

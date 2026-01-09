@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kore-supersim-dashboard"
+version = "1.0.0"
+description = "A production-ready webhook receiver and analytics dashboard for KORE Wireless SUPER SIM Event Streams"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [
+    {name = "KORE Wireless", email = "vribeiro@korewireless.com"}
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Framework :: Flask",
+    "Topic :: Internet :: WWW/HTTP :: WSGI :: Application",
+    "Topic :: System :: Monitoring",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "flask>=2.0.0",
+    "sqlalchemy>=2.0.0",
+    "apscheduler>=3.10.0",
+    "python-dateutil>=2.8.0",
+    "python-dotenv>=0.19.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/naturalfunction/kore-supersim-dashboard"
+Documentation = "https://github.com/naturalfunction/kore-supersim-dashboard#readme"
+Repository = "https://github.com/naturalfunction/kore-supersim-dashboard.git"
+Issues = "https://github.com/naturalfunction/kore-supersim-dashboard/issues"
+
+[project.scripts]
+kore-dashboard = "run:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']

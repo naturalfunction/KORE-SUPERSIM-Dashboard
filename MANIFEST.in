@@ -1,0 +1,14 @@
+include README.md
+include LICENSE
+include SECURITY.md
+include requirements.txt
+include .env.example
+recursive-include app/static *
+recursive-include app/templates *
+recursive-include deployment *
+exclude .env
+exclude *.db
+exclude *.sqlite
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude .DS_Store
