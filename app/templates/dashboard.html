@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
     <title>{{ app_title }}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -244,8 +245,11 @@
 
                         <!-- JSON View -->
                         <div id="view-json-{{ event.id }}" class="detail-content-view">
+                            <div style="display: flex; justify-content: flex-end; padding: 8px 15px 0;">
+                                <button class="tab-btn" onclick="copyJson('{{ event.id }}')" style="font-size: 0.8em;">Copy JSON</button>
+                            </div>
                             <div class="json-view-wrapper">
-                                <pre>{{ event.payload | tojson(indent=2) }}</pre>
+                                <pre id="json-content-{{ event.id }}">{{ event.payload | tojson(indent=2) }}</pre>
                             </div>
                         </div>
                     </div>
@@ -268,9 +272,29 @@
             </div>
 
             <div class="analytics-grid">
+                <div class="chart-container" style="grid-column: 1 / -1;">
+                    <h3>Event Timeline (Last 30 Days)</h3>
+                    <canvas id="daily-timeline-chart"></canvas>
+                </div>
+
                 <div class="chart-container">
                     <h3>Events by Type</h3>
                     <canvas id="events-by-type-chart"></canvas>
+                </div>
+
+                <div class="chart-container">
+                    <h3>RAT Type Distribution</h3>
+                    <canvas id="rat-type-chart"></canvas>
+                </div>
+
+                <div class="chart-container">
+                    <h3>Top Devices by Activity</h3>
+                    <canvas id="top-devices-chart"></canvas>
+                </div>
+
+                <div class="chart-container">
+                    <h3>Data Usage per Device</h3>
+                    <canvas id="data-per-device-chart"></canvas>
                 </div>
 
                 <div class="chart-container">
@@ -320,12 +344,21 @@
                         <input type="text" id="search-iccid" placeholder="Enter ICCID">
                     </div>
                     <div class="form-field">
+                        <label for="search-device-name">Device Name</label>
+                        <select id="search-device-name">
+                            <option value="">All Devices</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-field">
                         <label for="search-event-type">Event Type</label>
                         <select id="search-event-type">
                             <option value="">All Types</option>
-                            <option value="com.kore.iot.supersim.connection.data-session.started">Started</option>
-                            <option value="com.kore.iot.supersim.connection.data-session.updated">Updated</option>
-                            <option value="com.kore.iot.supersim.connection.data-session.ended">Ended</option>
+                            <option value="started">Started</option>
+                            <option value="updated">Updated</option>
+                            <option value="ended">Ended</option>
                         </select>
                     </div>
                 </div>
@@ -360,11 +393,17 @@
         // Auto-refresh configuration
         const AUTO_REFRESH_INTERVAL = {{ auto_refresh }} * 1000; // Convert to milliseconds
 
-        // Auto-refresh only on live view
+        // Auto-refresh only on live view (paused when viewing JSON)
         let refreshTimer = null;
+        window._autoRefreshPaused = false;
+
         function startAutoRefresh() {
             if (refreshTimer) clearTimeout(refreshTimer);
             refreshTimer = setTimeout(function () {
+                if (window._autoRefreshPaused) {
+                    startAutoRefresh(); // Reschedule, don't reload
+                    return;
+                }
                 if (document.getElementById('live-view').classList.contains('active')) {
                     location.reload();
                 }

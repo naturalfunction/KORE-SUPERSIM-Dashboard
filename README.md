@@ -8,9 +8,12 @@ A proof of concept webhook receiver and analytics dashboard for **KORE Wireless 
 ✅ **Webhook Security** - KORE signature verification with proper JSON minification  
 ✅ **CloudEvents 1.0 Support** - Receives KORE SUPER SIM event streams  
 ✅ **SQLite Database** - Persistent storage with automatic data retention  
-✅ **Real-time Dashboard** - Live event monitoring with auto-refresh  
-✅ **Analytics & Charts** - Visualize data usage, network distribution, and event types  
-✅ **Search & Filter** - Find events by ICCID, type, date range, and more  
+✅ **Real-time Dashboard** - Live event monitoring with auto-refresh (pauses on JSON view)  
+✅ **Analytics & Charts** - Event timeline, RAT types, top devices, data usage per device, networks, countries, and event type breakdown  
+✅ **Interactive Chart Drill-Down** - Click any chart segment to filter matching events in Search & Filter  
+✅ **Search & Filter** - Find events by ICCID, device name, event type, date range, RAT type, country, and network  
+✅ **Global Connectivity Map** - Heatmap with auto-fit zoom, online/offline device status, and fly-to navigation  
+✅ **Expandable Event Details** - Structured and JSON views with one-click Copy JSON  
 ✅ **Production Ready** - Nginx configuration, systemd service, and deployment guides
 
 ## Quick Start
@@ -92,25 +95,38 @@ kore-supersim-dashboard/
 
 ### 1. Live Events
 - Real-time display of recent events (last 100)
-- Auto-refresh every 15 seconds
-- Shows SIM details, network info, data usage, and location
+- Auto-refresh every 15 seconds (pauses when viewing JSON to prevent reload mid-copy)
+- Master-detail layout with event list sidebar and structured detail pane
+- Structured and JSON views with one-click Copy JSON button
+- Click "Map ↗" to jump to a device's location on the map
 
 ### 2. Analytics
-- **Events by Type**: Breakdown of started/updated/ended events
-- **Top Networks**: Most active mobile operators
-- **Geographic Distribution**: Events by country
-- **Data Usage**: Total data consumption across all SIMs
+- **Event Timeline**: Daily event count over the last 30 days (line chart)
+- **Events by Type**: Breakdown of started/updated/ended events with semantic colors
+- **RAT Type Distribution**: LTE, NB-IoT, etc. breakdown (doughnut chart)
+- **Top Devices by Activity**: Most active devices (horizontal bar)
+- **Data Usage per Device**: Data consumption per device (horizontal bar)
+- **Top Networks**: Most active mobile operators (horizontal bar)
+- **Geographic Distribution**: Events by country (pie chart)
+- **Data Usage Overview**: Total data usage in GB/MB/bytes
+- **Click-through Drill-Down**: Click any chart segment to jump to Search & Filter with pre-filled filters
+- Devices with no name automatically fall back to ICCID in charts
 
 ### 3. Map View
 - **Global Heatmap**: Visualizes device density (green=online, red=offline)
+- **Auto-fit Zoom**: Map automatically zooms to fit all device locations on load
 - **Interactive Map**: Zoom and pan to explore global connectivity
-- **Device Markers**: Click "Map ↗" on any event to see its location on the map
+- **Device Markers**: Click "Map ↗" on any event to fly to its exact location
+- **Show All**: Button resets the view to fit all devices
 
-### 3. Search & Filter
-- Filter by SIM ICCID
-- Filter by event type
-- Date range filtering
-- Pagination support
+### 4. Search & Filter
+- Filter by SIM ICCID, device name, event type, RAT type, country, and network
+- Device name dropdown populated from database (falls back to ICCID for unnamed devices)
+- Date range filtering with auto-populated 30-day window
+- End date auto-defaults to 23:59 for full-day coverage
+- Expandable results with Structured and JSON detail views
+- One-click Copy JSON button on each result
+- Click "Map ↗" on any result to jump to its location on the map
 
 ## API Endpoints
 
@@ -122,7 +138,7 @@ Receives KORE SUPER SIM CloudEvents (JSON array format). Requires `kore-signatur
 
 ### Events API
 ```
-GET /api/events?limit=50&offset=0&iccid=<iccid>&event_type=<type>&start_date=<iso>&end_date=<iso>
+GET /api/events?limit=50&offset=0&iccid=<iccid>&event_type=<type>&start_date=<iso>&end_date=<iso>&device_name=<name>&rat_type=<rat>&country=<country>&network=<network>
 ```
 Returns paginated events with optional filtering.
 
@@ -130,7 +146,19 @@ Returns paginated events with optional filtering.
 ```
 GET /api/stats
 ```
-Returns analytics data (total events, unique SIMs, data usage, breakdowns).
+Returns analytics data (total events, unique SIMs, data usage, event type breakdown, top networks, countries, RAT types, top devices, data per device, daily timeline).
+
+### Devices API
+```
+GET /api/devices
+```
+Returns a list of distinct device names for populating filter dropdowns.
+
+### Heatmap API
+```
+GET /api/heatmap
+```
+Returns online/offline device locations for the map view.
 
 ### Health Check
 ```

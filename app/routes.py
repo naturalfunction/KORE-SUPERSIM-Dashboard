@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify, render_template
 from datetime import datetime
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 import logging
 import hmac
 import hashlib
@@ -24,6 +24,7 @@ main_bp = Blueprint("main", __name__)
 
 _rate_lock = threading.Lock()
 _rate_buckets = {}
+_last_bucket_cleanup = 0.0
 
 
 # ─────────────────────────────────────────────────────────────
@@ -31,6 +32,8 @@ _rate_buckets = {}
 # ─────────────────────────────────────────────────────────────
 
 def _rate_limited(ip_addr: str):
+    global _last_bucket_cleanup
+
     if WEBHOOK_RATE_LIMIT <= 0:
         return False
 
@@ -38,6 +41,14 @@ def _rate_limited(ip_addr: str):
     window_start = now - WEBHOOK_RATE_WINDOW
 
     with _rate_lock:
+        # Periodically sweep all buckets to remove stale IPs (every 10x the window)
+        if now - _last_bucket_cleanup > WEBHOOK_RATE_WINDOW * 10:
+            stale = [ip for ip, ts_list in _rate_buckets.items()
+                     if not any(t >= window_start for t in ts_list)]
+            for ip in stale:
+                del _rate_buckets[ip]
+            _last_bucket_cleanup = now
+
         bucket = _rate_buckets.get(ip_addr, [])
         bucket = [ts for ts in bucket if ts >= window_start]
 
@@ -189,7 +200,6 @@ def webhook_super():
                 return jsonify({"status": "error", "message": err}), 400
 
         idempotency_token = request.headers.get("kore-idempotency-token")
-        kore_signature = request.headers.get("kore-signature")
 
         stored = 0
 
@@ -233,7 +243,6 @@ def webhook_super():
                     ip_address=data.get("ip_address"),
                     account_sid=data.get("account_sid"),
                     idempotency_token=idempotency_token,
-                    kore_signature=kore_signature,
                     payload=event,
                     webhook_received_at=datetime.utcnow(),
                     remote_addr=ip,
@@ -262,11 +271,53 @@ def webhook_super():
 
 @main_bp.route("/api/events")
 def get_events():
-    limit = min(int(request.args.get("limit", EVENTS_PER_PAGE)), MAX_EVENTS_LIMIT)
-    offset = int(request.args.get("offset", 0))
+    limit = min(request.args.get("limit", EVENTS_PER_PAGE, type=int) or EVENTS_PER_PAGE, MAX_EVENTS_LIMIT)
+    offset = max(request.args.get("offset", 0, type=int) or 0, 0)
+
+    iccid = request.args.get("iccid")
+    event_type = request.args.get("event_type")
+    start_date = request.args.get("start_date")
+    end_date = request.args.get("end_date")
+    device_name = request.args.get("device_name")
+    rat_type = request.args.get("rat_type")
+    country = request.args.get("country")
+    network = request.args.get("network")
 
     with get_db() as db:
         q = db.query(ConnectionEvent)
+
+        if iccid:
+            q = q.filter(ConnectionEvent.sim_iccid == iccid)
+        if device_name:
+            q = q.filter(
+                (ConnectionEvent.sim_unique_name == device_name) |
+                ((ConnectionEvent.sim_unique_name.is_(None)) & (ConnectionEvent.sim_iccid == device_name))
+            )
+        if rat_type:
+            q = q.filter(ConnectionEvent.rat_type == rat_type)
+        if country:
+            q = q.filter(ConnectionEvent.network_iso_country == country)
+        if network:
+            q = q.filter(ConnectionEvent.network_name == network)
+        if event_type:
+            q = q.filter(ConnectionEvent.event_type.contains(event_type))
+        if start_date:
+            try:
+                parsed_start = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+                if parsed_start.tzinfo is not None:
+                    parsed_start = parsed_start.replace(tzinfo=None)
+                q = q.filter(ConnectionEvent.event_time >= parsed_start)
+            except (ValueError, AttributeError):
+                pass
+        if end_date:
+            try:
+                parsed_end = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+                if parsed_end.tzinfo is not None:
+                    parsed_end = parsed_end.replace(tzinfo=None)
+                q = q.filter(ConnectionEvent.event_time <= parsed_end)
+            except (ValueError, AttributeError):
+                pass
+
         total = q.count()
         events = q.order_by(desc(ConnectionEvent.event_time)).offset(offset).limit(limit).all()
 
@@ -283,6 +334,53 @@ def get_events():
 @main_bp.route("/api/stats")
 def stats():
     return jsonify(get_database_stats())
+
+
+@main_bp.route("/api/devices")
+def get_devices():
+    with get_db() as db:
+        rows = db.query(
+            func.coalesce(ConnectionEvent.sim_unique_name, ConnectionEvent.sim_iccid)
+        ).filter(
+            (ConnectionEvent.sim_unique_name.isnot(None)) | (ConnectionEvent.sim_iccid.isnot(None))
+        ).distinct().order_by(func.coalesce(ConnectionEvent.sim_unique_name, ConnectionEvent.sim_iccid)).all()
+    return jsonify([r[0] for r in rows])
+
+
+@main_bp.route("/api/heatmap")
+def heatmap():
+    with get_db() as db:
+        # Subquery: most recent event per SIM (max id grouped by sim_iccid)
+        subq = db.query(func.max(ConnectionEvent.id)).group_by(
+            ConnectionEvent.sim_iccid
+        ).scalar_subquery()
+
+        # Get full events for those IDs, filtering out null coordinates
+        events = db.query(ConnectionEvent).filter(
+            ConnectionEvent.id.in_(subq),
+            ConnectionEvent.latitude.isnot(None),
+            ConnectionEvent.longitude.isnot(None),
+        ).all()
+
+    online = []
+    offline = []
+
+    for e in events:
+        entry = {
+            "lat": e.latitude,
+            "lon": e.longitude,
+            "iccid": e.sim_iccid,
+            "timestamp": e.event_time.isoformat() if e.event_time else None,
+        }
+
+        if e.event_type and "ended" in e.event_type:
+            entry["status"] = "offline"
+            offline.append(entry)
+        elif e.event_type and ("started" in e.event_type or "updated" in e.event_type):
+            entry["status"] = "online"
+            online.append(entry)
+
+    return jsonify({"online": online, "offline": offline})
 
 
 @main_bp.route("/health")

@@ -58,8 +58,7 @@ class ConnectionEvent(Base):
     
     # Security and reliability
     idempotency_token = Column(String, unique=True, index=True)
-    kore_signature = Column(String)
-    
+
     # Metadata
     payload = Column(JSON)  # Full CloudEvents payload
     webhook_received_at = Column(DateTime, nullable=False, default=datetime.utcnow)
@@ -112,7 +111,6 @@ class ConnectionEvent(Base):
             'ip_address': self.ip_address,
             'account_sid': self.account_sid,
             'idempotency_token': self.idempotency_token,
-            'kore_signature': self.kore_signature,
             'webhook_received_at': self.webhook_received_at.isoformat() if self.webhook_received_at else None,
             'remote_addr': self.remote_addr,
         }
